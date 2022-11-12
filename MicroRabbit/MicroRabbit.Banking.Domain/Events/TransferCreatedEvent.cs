@@ -1,15 +1,14 @@
 ﻿using MicroRabbit.Domain.Core.Events;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace MicroRabbit.Banking.Domain.Events
 {
-    public class TransferCreatedEvent : Event
+    public sealed class TransferCreatedEvent : Event
     {
-        public int From { get; private set; }
-        public int To { get; private set; }
-        public decimal Amount { get; private set; }
+        private int From { get; set; }
+
+        private int To { get;  set; }
+
+        private decimal Amount { get; set; }
 
         public TransferCreatedEvent(int from, int to, decimal amount)
         {

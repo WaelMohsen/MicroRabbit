@@ -37,19 +37,16 @@ namespace MicroRabbit.Infra.Bus
         public void Publish<T>(T @event) where T : Event
         {
             var factory = new ConnectionFactory() { HostName = "localhost" };
-            using (var connection = factory.CreateConnection())
-            using (var channel = connection.CreateModel())
-            {
-                var eventName = @event.GetType().Name;
+            using var connection = factory.CreateConnection();
+            using var channel = connection.CreateModel();
+            var eventName = @event.GetType().Name;
 
-                channel.QueueDeclare(eventName, false, false, false, null);
+            channel.QueueDeclare(eventName, false, false, false, null);
 
-                var message = JsonConvert.SerializeObject(@event);
-                var body = Encoding.UTF8.GetBytes(message);
+            var message = JsonConvert.SerializeObject(@event);
+            var body = Encoding.UTF8.GetBytes(message);
 
-                channel.BasicPublish("", eventName, null, body);
-            }
-
+            channel.BasicPublish("", eventName, null, body);
         }
 
         public void Subscribe<T, TH>()
@@ -104,7 +101,7 @@ namespace MicroRabbit.Infra.Bus
         private async Task Consumer_Received(object sender, BasicDeliverEventArgs e)
         {
             var eventName = e.RoutingKey;
-            var message = Encoding.UTF8.GetString(e.Body);
+            var message = Encoding.UTF8.GetString(e.Body.ToArray());
 
             try
             {
@@ -119,18 +116,16 @@ namespace MicroRabbit.Infra.Bus
         {
             if(_handlers.ContainsKey(eventName))
             {
-                using (var scope = _serviceScopeFactory.CreateScope())
+                using var scope = _serviceScopeFactory.CreateScope();
+                var subscriptions = _handlers[eventName];
+                foreach (var subscription in subscriptions)
                 {
-                    var subscriptions = _handlers[eventName];
-                    foreach (var subscription in subscriptions)
-                    {
-                        var handler = scope.ServiceProvider.GetService(subscription);
-                        if (handler == null) continue;
-                        var eventType = _eventTypes.SingleOrDefault(t => t.Name == eventName);
-                        var @event = JsonConvert.DeserializeObject(message, eventType);
-                        var conreteType = typeof(IEventHandler<>).MakeGenericType(eventType);
-                        await (Task)conreteType.GetMethod("Handle").Invoke(handler, new object[] { @event });
-                    }
+                    var handler = scope.ServiceProvider.GetService(subscription);
+                    if (handler == null) continue;
+                    var eventType = _eventTypes.SingleOrDefault(t => t.Name == eventName);
+                    var @event = JsonConvert.DeserializeObject(message, eventType);
+                    var concreteType = typeof(IEventHandler<>).MakeGenericType(eventType);
+                    await (Task)concreteType.GetMethod("Handle").Invoke(handler, new object[] { @event });
                 }
             }
         }

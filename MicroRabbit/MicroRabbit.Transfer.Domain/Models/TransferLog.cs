@@ -4,7 +4,7 @@ using System.Text;
 
 namespace MicroRabbit.Transfer.Domain.Models
 {
-    public class TransferLog
+    public sealed class TransferLog
     {
         public int Id { get; set; }
         public int FromAccount { get; set; }

@@ -1,11 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-
-namespace MicroRabbit.MVC.Models
+﻿namespace MicroRabbit.MVC.Models
 {
-    public class TransferViewModel
+    public sealed class TransferViewModel
     {
         public string TransferNotes { get; set; }
         public int FromAccount { get; set; }

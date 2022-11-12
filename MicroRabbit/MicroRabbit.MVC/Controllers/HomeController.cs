@@ -1,16 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
-using MicroRabbit.MVC.Models;
-using MicroRabbit.MVC.Services;
+﻿using MicroRabbit.MVC.Models;
 using MicroRabbit.MVC.Models.DTO;
+using MicroRabbit.MVC.Services;
+using Microsoft.AspNetCore.Mvc;
+using System.Diagnostics;
+using System.Threading.Tasks;
 
 namespace MicroRabbit.MVC.Controllers
 {
-    public class HomeController : Controller
+    public sealed class HomeController : Controller
     {
         private readonly ITransferService _transferService;
 
@@ -38,7 +35,7 @@ namespace MicroRabbit.MVC.Controllers
         [HttpPost]
         public async Task<IActionResult> Transfer(TransferViewModel model)
         {
-            TransferDto transferDto = new TransferDto()
+            var transferDto = new TransferDto()
             {
                 FromAccount = model.FromAccount,
                 ToAccount = model.ToAccount,

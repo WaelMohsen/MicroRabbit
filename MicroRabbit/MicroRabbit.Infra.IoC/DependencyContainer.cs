@@ -17,12 +17,10 @@ using MicroRabbit.Transfer.Domain.Events;
 using MicroRabbit.Transfer.Domain.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace MicroRabbit.Infra.IoC
 {
-    public class DependencyContainer
+    public sealed class DependencyContainer
     {
         public static void RegisterServices(IServiceCollection services)
         {
