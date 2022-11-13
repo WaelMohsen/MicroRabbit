@@ -4,7 +4,7 @@ namespace MicroRabbit.Domain.Core.Events
 {
     public abstract class Message : IRequest<bool>
     {
-        private string MessageType { get; set; }
+        public string MessageType { get;  }
 
         protected Message()
         {

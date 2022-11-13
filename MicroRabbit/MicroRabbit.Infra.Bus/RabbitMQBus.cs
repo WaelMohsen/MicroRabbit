@@ -17,67 +17,115 @@ namespace MicroRabbit.Infra.Bus
     public sealed class RabbitMQBus : IEventBus
     {
         private readonly IMediator _mediator;
-        private readonly Dictionary<string, List<Type>> _handlers;
-        private readonly List<Type> _eventTypes;
+
         private readonly IServiceScopeFactory _serviceScopeFactory;
+
+        private List<Type> EventsPool { get; }
+        private Dictionary<string, List<Type>> EventSubscribersPool { get; }
 
         public RabbitMQBus(IMediator mediator, IServiceScopeFactory serviceScopeFactory)
         {
             _mediator = mediator;
             _serviceScopeFactory = serviceScopeFactory;
-            _handlers = new Dictionary<string, List<Type>>();
-            _eventTypes = new List<Type>();
+
+            EventsPool = new List<Type>();
+            EventSubscribersPool = new Dictionary<string, List<Type>>();
+
         }
+        
+        #region "Public Event Capabilities"
 
         public Task SendCommand<T>(T command) where T : Command
         {
             return _mediator.Send(command);
         }
 
-        public void Publish<T>(T @event) where T : Event
+        /// <summary>
+        /// Create new RabbitMQ queue
+        /// Queue name = Event Type Name
+        /// </summary>
+        /// <typeparam name="TEvent"></typeparam>
+        /// <param name="eventToPublish"></param>
+        public void Publish<TEvent>(TEvent eventToPublish) where TEvent : Event
         {
             var factory = new ConnectionFactory() { HostName = "localhost" };
             using var connection = factory.CreateConnection();
             using var channel = connection.CreateModel();
-            var eventName = @event.GetType().Name;
+            var eventName = eventToPublish.GetType().Name;
 
             channel.QueueDeclare(eventName, false, false, false, null);
 
-            var message = JsonConvert.SerializeObject(@event);
+            var message = JsonConvert.SerializeObject(eventToPublish);
             var body = Encoding.UTF8.GetBytes(message);
 
             channel.BasicPublish("", eventName, null, body);
         }
 
-        public void Subscribe<T, TH>()
-            where T : Event
-            where TH : IEventHandler<T>
+        /// <summary>
+        /// Consume a specific event from the RabbitMQ
+        /// Queue name = Event Type Name
+        /// </summary>
+        /// <typeparam name="TEvent"></typeparam>
+        /// <typeparam name="TEventHandler"></typeparam>
+        /// <exception cref="ArgumentException"></exception>
+        public void Subscribe<TEvent, TEventHandler>()
+            where TEvent : Event
+            where TEventHandler : IEventHandler<TEvent>
         {
-            var eventName = typeof(T).Name;
-            var handlerType = typeof(TH);
+            var eventName = typeof(TEvent).Name;
+            var newSubscriberType = typeof(TEventHandler);
 
-            if (!_eventTypes.Contains(typeof(T)))
-            {
-                _eventTypes.Add(typeof(T));
-            }
+            //Add New Event to the EventPool
+            if (!EventsPool.Contains(typeof(TEvent)))
+                EventsPool.Add(typeof(TEvent));
 
-            if (!_handlers.ContainsKey(eventName))
-            {
-                _handlers.Add(eventName, new List<Type>());
-            }
+            //Add New Event to the EventHandlersPool with no Handlers
+            if (!EventSubscribersPool.ContainsKey(eventName))
+                EventSubscribersPool.Add(eventName, new List<Type>());
 
-            if (_handlers[eventName].Any(s => s.GetType() == handlerType))
-            {
+            else if (EventSubscribersPool[eventName].Any(subscriber => subscriber.GetType() == newSubscriberType))
                 throw new ArgumentException(
-                    $"Handler Type {handlerType.Name} already is registered for '{eventName}'", nameof(handlerType));
-            }
+                    $"Handler Type {newSubscriberType.Name} already is registered for '{eventName}'", newSubscriberType.Name);
 
-            _handlers[eventName].Add(handlerType);
+            EventSubscribersPool[eventName].Add(newSubscriberType);
 
-            StartBasicConsume<T>();
+            //Consumer Messages from the RabbitMQs
+            StartBasicConsume<TEvent>();
         }
 
-        private void StartBasicConsume<T>() where T : Event
+        /// <summary>
+        /// UnSubscribe from the handlers Pool of a specific Event's 
+        /// </summary>
+        /// <typeparam name="TEvent"></typeparam>
+        /// <typeparam name="TEventHandler"></typeparam>
+        public void UnSubscribe<TEvent, TEventHandler>() where TEvent : Event where TEventHandler : IEventHandler<TEvent>
+        {
+            var eventName = typeof(TEvent).Name;
+            var subscriberType = typeof(TEventHandler);
+
+            if (EventSubscribersPool.ContainsKey(eventName))
+                if (EventSubscribersPool[eventName].Any(subscriber => subscriber.GetType() == subscriberType))
+                {
+                    EventSubscribersPool[eventName].Remove(subscriberType);
+
+                    if (EventSubscribersPool[eventName].Count == 0)
+                    {
+                        EventSubscribersPool.Remove(eventName);
+                        EventsPool.Remove(typeof(TEvent));
+                    }
+                }
+        }
+
+        #endregion
+
+        #region "Private helper methods"
+
+        /// <summary>
+        /// Consume a specific event from the RabbitMQ
+        /// Queue name = Event Type Name
+        /// </summary>
+        /// <typeparam name="TEvent"></typeparam>
+        private void StartBasicConsume<TEvent>() where TEvent : Event
         {
             var factory = new ConnectionFactory()
             {
@@ -88,7 +136,7 @@ namespace MicroRabbit.Infra.Bus
             var connection = factory.CreateConnection();
             var channel = connection.CreateModel();
 
-            var eventName = typeof(T).Name;
+            var eventName = typeof(TEvent).Name;
 
             channel.QueueDeclare(eventName, false, false, false, null);
 
@@ -98,36 +146,62 @@ namespace MicroRabbit.Infra.Bus
             channel.BasicConsume(eventName, true, consumer);
         }
 
-        private async Task Consumer_Received(object sender, BasicDeliverEventArgs e)
+        /// <summary>
+        /// Queue Consuming Handler
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="eventArgs"></param>
+        /// <returns></returns>
+        private async Task Consumer_Received(object sender, BasicDeliverEventArgs eventArgs)
         {
-            var eventName = e.RoutingKey;
-            var message = Encoding.UTF8.GetString(e.Body.ToArray());
-
             try
             {
-                await ProcessEvent(eventName, message).ConfigureAwait(false);
+                //Get the event name from the eventArgs
+                var eventName = eventArgs.RoutingKey;
+                var jsonMessage = Encoding.UTF8.GetString(eventArgs.Body.ToArray());
+
+                await ProcessEvent(eventName, jsonMessage).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
+                //todo
             }
         }
 
-        private async Task ProcessEvent(string eventName, string message)
+        /// <summary>
+        /// Announce Subscribers by the received Events
+        /// </summary>
+        /// <param name="eventName"></param>
+        /// <param name="jsonMessage"></param>
+        /// <returns></returns>
+        private async Task ProcessEvent(string eventName, string jsonMessage)
         {
-            if(_handlers.ContainsKey(eventName))
+            //Check if Events Pool have this Event
+            if (EventSubscribersPool.ContainsKey(eventName))
             {
                 using var scope = _serviceScopeFactory.CreateScope();
-                var subscriptions = _handlers[eventName];
-                foreach (var subscription in subscriptions)
+
+                //Get Concrete Event type from the Event Pool
+                var eventToProcess = EventsPool.SingleOrDefault(currentEvent => currentEvent.Name == eventName);
+
+                //Get Subscribers Pool associated with this Event
+                var subscribersPool = EventSubscribersPool[eventName];
+
+                foreach (var currentSubscriber in subscribersPool)
                 {
-                    var handler = scope.ServiceProvider.GetService(subscription);
-                    if (handler == null) continue;
-                    var eventType = _eventTypes.SingleOrDefault(t => t.Name == eventName);
-                    var @event = JsonConvert.DeserializeObject(message, eventType);
-                    var concreteType = typeof(IEventHandler<>).MakeGenericType(eventType);
-                    await (Task)concreteType.GetMethod("Handle").Invoke(handler, new object[] { @event });
+                    //Get a new instance of the Subscriber Type
+                    var handler = scope.ServiceProvider.GetService(currentSubscriber);
+                    if (handler == null)
+                        continue;
+
+                    var receivedEventDetails = JsonConvert.DeserializeObject(jsonMessage, eventToProcess!);
+
+                    var concreteSubscriber = typeof(IEventHandler<>).MakeGenericType(eventToProcess);
+                    await ((Task)concreteSubscriber.GetMethod("Handle")!.Invoke(handler, new[] { receivedEventDetails }))!;
                 }
             }
         }
+
+        #endregion
     }
 }

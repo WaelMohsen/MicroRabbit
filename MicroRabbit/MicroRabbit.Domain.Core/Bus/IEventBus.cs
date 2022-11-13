@@ -6,12 +6,16 @@ namespace MicroRabbit.Domain.Core.Bus
 {
     public interface IEventBus
     {
-        Task SendCommand<T>(T command) where T : Command;
+        Task SendCommand<TCommand>(TCommand command) where TCommand : Command;
 
-        void Publish<T>(T @event) where T : Event;
+        void Publish<TEvent>(TEvent eventToPublish) where TEvent : Event;
 
-        void Subscribe<T, TH>()
-            where T : Event
-            where TH : IEventHandler<T>;
+        void Subscribe<TEvent, TEventHandler>()
+            where TEvent : Event
+            where TEventHandler : IEventHandler<TEvent>;
+
+        void UnSubscribe<TEvent, TEventHandler>()
+            where TEvent : Event
+            where TEventHandler : IEventHandler<TEvent>;
     }
 }

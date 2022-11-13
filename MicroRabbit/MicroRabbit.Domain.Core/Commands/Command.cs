@@ -5,7 +5,7 @@ namespace MicroRabbit.Domain.Core.Commands
 {
     public abstract class Command : Message
     {
-        private DateTime Timestamp { get; set; }
+        public DateTime Timestamp { get;  }
 
         protected Command()
         {
